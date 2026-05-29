@@ -6,13 +6,14 @@ import 'package:uuid/uuid.dart';
 
 import '../models/clip_item.dart';
 import '../services/clipboard_service.dart';
+import '../services/code_detector.dart';
 import '../services/ocr_service.dart';
 import '../services/startup_service.dart';
 import '../services/storage_service.dart';
 
 const _uuid = Uuid();
 
-enum FilterType { all, text, images, urls }
+enum FilterType { all, text, images, urls, code }
 
 class ClipProvider extends ChangeNotifier {
   List<ClipItem> _items = [];
@@ -26,13 +27,13 @@ class ClipProvider extends ChangeNotifier {
   List<ClipItem> get allItems => _items;
 
   List<ClipItem> get filteredItems {
-    var list = _items.where((item) {
+    return _items.where((item) {
       if (_filter == FilterType.text && item.type != ClipType.text) return false;
       if (_filter == FilterType.images && item.type != ClipType.image) return false;
       if (_filter == FilterType.urls && item.type != ClipType.url) return false;
+      if (_filter == FilterType.code && item.type != ClipType.code) return false;
       return item.matches(_searchQuery);
     }).toList();
-    return list;
   }
 
   List<ClipItem> get pinnedItems => _items.where((i) => i.isPinned).toList();
@@ -67,18 +68,24 @@ class ClipProvider extends ChangeNotifier {
   int get textCount => _items.where((i) => i.type == ClipType.text).length;
   int get imageCount => _items.where((i) => i.type == ClipType.image).length;
   int get urlCount => _items.where((i) => i.type == ClipType.url).length;
+  int get codeCount => _items.where((i) => i.type == ClipType.code).length;
 
   Future<void> initialize() async {
-    _items = await StorageService.loadClips();
-    final prefs = await SharedPreferences.getInstance();
-    _maxHistory = prefs.getInt('maxHistory') ?? 200;
-    _tintThemeIndex = prefs.getInt('tintThemeIndex') ?? 0;
-    _launchAtStartup = StartupService.isEnabled();
+    try {
+      _items = await StorageService.loadClips();
+      final prefs = await SharedPreferences.getInstance();
+      _maxHistory = prefs.getInt('maxHistory') ?? 200;
+      _tintThemeIndex = prefs.getInt('tintThemeIndex') ?? 0;
+      _launchAtStartup = StartupService.isEnabled();
+    } catch (_) {}
     _isLoading = false;
-
     ClipboardService.onClipboardChanged = _onClipboardData;
     ClipboardService.startMonitoring();
+    notifyListeners();
+  }
 
+  Future<void> reloadFromDisk() async {
+    _items = await StorageService.loadClips();
     notifyListeners();
   }
 
@@ -86,9 +93,19 @@ class ClipProvider extends ChangeNotifier {
     ClipItem? newItem;
 
     if (type == 'text' && text != null) {
-      // Deduplicate
       if (_items.isNotEmpty && _items.first.textContent == text) return;
-      newItem = ClipItem.text(id: _uuid.v4(), content: text, timestamp: DateTime.now());
+      final codeInfo = CodeDetector.detect(text);
+      if (codeInfo != null) {
+        newItem = ClipItem.code(
+          id: _uuid.v4(),
+          content: text,
+          timestamp: DateTime.now(),
+          language: codeInfo.language.name,
+          framework: codeInfo.framework != CodeFramework.none ? codeInfo.framework.name : null,
+        );
+      } else {
+        newItem = ClipItem.text(id: _uuid.v4(), content: text, timestamp: DateTime.now());
+      }
     } else if (type == 'url' && text != null) {
       if (_items.isNotEmpty && _items.first.textContent == text) return;
       newItem = ClipItem.url(id: _uuid.v4(), url: text, timestamp: DateTime.now());
@@ -107,7 +124,9 @@ class ClipProvider extends ChangeNotifier {
 
     _items.insert(0, newItem);
     _trimHistory();
-    await _save();
+    try {
+      await _save();
+    } catch (_) {}
     notifyListeners();
 
     if (newItem.isImage) {
@@ -181,6 +200,38 @@ class ClipProvider extends ChangeNotifier {
     if (index == -1) return;
     final newTags = item.tags.where((t) => t != tag).toList();
     _items[index] = item.copyWith(tags: newTags);
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> editItem(ClipItem item, String newContent) async {
+    final index = _items.indexWhere((i) => i.id == item.id);
+    if (index == -1) return;
+    final ClipItem updated;
+    if (newContent.startsWith('http://') || newContent.startsWith('https://')) {
+      updated = ClipItem(
+        id: item.id, type: ClipType.url, textContent: newContent,
+        timestamp: item.timestamp, isPinned: item.isPinned, tags: item.tags,
+      );
+    } else {
+      final codeInfo = CodeDetector.detect(newContent);
+      if (codeInfo != null) {
+        updated = ClipItem(
+          id: item.id, type: ClipType.code, textContent: newContent,
+          timestamp: item.timestamp, isPinned: item.isPinned, tags: item.tags,
+          codeLanguage: codeInfo.language.name,
+          codeFramework: codeInfo.framework != CodeFramework.none
+              ? codeInfo.framework.name
+              : null,
+        );
+      } else {
+        updated = ClipItem(
+          id: item.id, type: ClipType.text, textContent: newContent,
+          timestamp: item.timestamp, isPinned: item.isPinned, tags: item.tags,
+        );
+      }
+    }
+    _items[index] = updated;
     await _save();
     notifyListeners();
   }

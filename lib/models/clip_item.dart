@@ -1,5 +1,5 @@
 
-enum ClipType { text, image, url }
+enum ClipType { text, image, url, code }
 
 class ClipItem {
   final String id;
@@ -12,6 +12,8 @@ class ClipItem {
   List<String> tags;
   final int? imageWidth;
   final int? imageHeight;
+  final String? codeLanguage;
+  final String? codeFramework;
 
   ClipItem({
     required this.id,
@@ -24,6 +26,8 @@ class ClipItem {
     List<String>? tags,
     this.imageWidth,
     this.imageHeight,
+    this.codeLanguage,
+    this.codeFramework,
   }) : tags = tags ?? [];
 
   factory ClipItem.text({
@@ -66,9 +70,26 @@ class ClipItem {
         imageHeight: height,
       );
 
+  factory ClipItem.code({
+    required String id,
+    required String content,
+    required DateTime timestamp,
+    required String language,
+    String? framework,
+  }) =>
+      ClipItem(
+        id: id,
+        type: ClipType.code,
+        textContent: content,
+        timestamp: timestamp,
+        codeLanguage: language,
+        codeFramework: framework,
+      );
+
   bool get isText => type == ClipType.text;
   bool get isImage => type == ClipType.image;
   bool get isUrl => type == ClipType.url;
+  bool get isCode => type == ClipType.code;
 
   String get displayText {
     if (type == ClipType.image) return ocrText ?? 'Image';
@@ -105,6 +126,8 @@ class ClipItem {
         tags: tags ?? List.from(this.tags),
         imageWidth: imageWidth,
         imageHeight: imageHeight,
+        codeLanguage: codeLanguage,
+        codeFramework: codeFramework,
       );
 
   Map<String, dynamic> toJson() => {
@@ -118,6 +141,8 @@ class ClipItem {
         'tags': tags,
         'imageWidth': imageWidth,
         'imageHeight': imageHeight,
+        'codeLanguage': codeLanguage,
+        'codeFramework': codeFramework,
       };
 
   factory ClipItem.fromJson(Map<String, dynamic> json) => ClipItem(
@@ -134,6 +159,8 @@ class ClipItem {
         tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
         imageWidth: json['imageWidth'] as int?,
         imageHeight: json['imageHeight'] as int?,
+        codeLanguage: json['codeLanguage'] as String?,
+        codeFramework: json['codeFramework'] as String?,
       );
 
   @override

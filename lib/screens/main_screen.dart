@@ -66,7 +66,9 @@ class _MainScreenState extends State<MainScreen> with WindowListener {
     if (eventName == 'show' && mounted) {
       setState(() => _page = NavPage.all);
       _searchController.clear();
-      context.read<ClipProvider>().resetView();
+      final provider = context.read<ClipProvider>();
+      provider.resetView();
+      provider.reloadFromDisk();
     }
   }
 
@@ -407,6 +409,7 @@ class _PageHeader extends StatelessWidget {
             textCount: provider.textCount,
             imageCount: provider.imageCount,
             urlCount: provider.urlCount,
+            codeCount: provider.codeCount,
           ),
         ],
       ),
@@ -442,6 +445,7 @@ class _ClipsGrid extends StatelessWidget {
             onDelete: () => ctx.read<ClipProvider>().deleteItem(item),
             onAddTag: (tag) => ctx.read<ClipProvider>().addTag(item, tag),
             onRemoveTag: (tag) => ctx.read<ClipProvider>().removeTag(item, tag),
+            onEdit: item.isImage ? null : (c) => ctx.read<ClipProvider>().editItem(item, c),
           );
         },
       ),

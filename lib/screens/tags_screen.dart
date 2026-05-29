@@ -193,6 +193,9 @@ class _TagsScreenState extends State<TagsScreen> {
                                 ctx.read<ClipProvider>().addTag(item, tag),
                             onRemoveTag: (tag) =>
                                 ctx.read<ClipProvider>().removeTag(item, tag),
+                            onEdit: item.isImage
+                                ? null
+                                : (c) => ctx.read<ClipProvider>().editItem(item, c),
                           );
                         },
                       ),

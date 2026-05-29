@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 
 import '../models/clip_item.dart';
+import '../services/code_detector.dart';
 import '../theme/app_theme.dart';
 import 'glass_container.dart';
 
@@ -15,6 +17,7 @@ class ClipCard extends StatefulWidget {
   final VoidCallback onDelete;
   final void Function(String tag) onAddTag;
   final void Function(String tag) onRemoveTag;
+  final void Function(String)? onEdit;
   final int index;
 
   const ClipCard({
@@ -26,6 +29,7 @@ class ClipCard extends StatefulWidget {
     required this.onAddTag,
     required this.onRemoveTag,
     required this.index,
+    this.onEdit,
   });
 
   @override
@@ -34,6 +38,9 @@ class ClipCard extends StatefulWidget {
 
 class _ClipCardState extends State<ClipCard> {
   bool _hovered = false;
+  bool _menuOpen = false;
+
+  void _onMenuChanged(bool open) => setState(() => _menuOpen = open);
 
   void _showTagDialog() {
     showDialog(
@@ -45,6 +52,27 @@ class _ClipCardState extends State<ClipCard> {
         onRemove: widget.onRemoveTag,
       ),
     );
+  }
+
+  void _showEditDialog() {
+    final onEdit = widget.onEdit;
+    if (onEdit == null) return;
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (ctx) => _EditDialog(item: widget.item, onSave: onEdit),
+    );
+  }
+
+  void _showPreviewDialog() {
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => _PreviewOverlay(
+        item: widget.item,
+        onClose: () => entry.remove(),
+      ),
+    );
+    Overlay.of(context).insert(entry);
   }
 
   @override
@@ -64,12 +92,21 @@ class _ClipCardState extends State<ClipCard> {
       ],
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
+        onExit: (_) => setState(() {
+          _hovered = false;
+          _menuOpen = false;
+        }),
         child: GlassCard(
           onTap: widget.onTap,
-          padding: item.isImage ? EdgeInsets.zero : const EdgeInsets.all(11),
+          padding: (item.isImage || item.isCode)
+              ? EdgeInsets.zero
+              : const EdgeInsets.all(11),
           borderRadius: 35,
-          child: item.isImage ? _buildImageCard(item) : _buildTextCard(item),
+          child: item.isImage
+              ? _buildImageCard(item)
+              : item.isCode
+              ? _buildCodeCard(item)
+              : _buildTextCard(item),
         ),
       ),
     );
@@ -160,29 +197,43 @@ class _ClipCardState extends State<ClipCard> {
                           .toList(),
                     ),
                   ),
-                Row(
-                  children: [
-                    Text(
-                      _formatTime(item.timestamp),
-                      style: const TextStyle(
-                        color: Color(0x73FFFFFF),
-                        fontSize: 10,
+                SizedBox(
+                  height: 26,
+                  child: Stack(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: AnimatedOpacity(
+                          opacity: _menuOpen ? 0.0 : 1.0,
+                          duration: 120.ms,
+                          child: Text(
+                            _formatTime(item.timestamp),
+                            style: const TextStyle(
+                              color: Color(0x73FFFFFF),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    AnimatedOpacity(
-                      opacity: _hovered ? 1 : 0,
-                      duration: 150.ms,
-                      child: _ActionRow(
-                        isPinned: item.isPinned,
-                        hasTag: item.tags.isNotEmpty,
-                        iconColor: Colors.white60,
-                        onPin: widget.onPin,
-                        onTag: _showTagDialog,
-                        onDelete: widget.onDelete,
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: AnimatedOpacity(
+                          opacity: _hovered ? 1 : 0,
+                          duration: 150.ms,
+                          child: _ActionRow(
+                            isPinned: item.isPinned,
+                            hasTag: item.tags.isNotEmpty,
+                            iconColor: Colors.white60,
+                            onPin: widget.onPin,
+                            onTag: _showTagDialog,
+                            onPreview: _showPreviewDialog,
+                            onDelete: widget.onDelete,
+                            onExpandedChanged: _onMenuChanged,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -248,34 +299,195 @@ class _ClipCardState extends State<ClipCard> {
         // Footer
         Padding(
           padding: const EdgeInsets.fromLTRB(11, 2, 11, 10),
-          child: Row(
-            children: [
-              Text(
-                '${item.textContent?.length ?? 0} chars · ${_formatTime(item.timestamp)}',
-                style: const TextStyle(
-                  color: AppTheme.textTertiary,
-                  fontSize: 10,
+          child: SizedBox(
+            height: 26,
+            child: Stack(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedOpacity(
+                    opacity: _menuOpen ? 0.0 : 1.0,
+                    duration: 120.ms,
+                    child: Text(
+                      '${item.textContent?.length ?? 0} chars · ${_formatTime(item.timestamp)}',
+                      style: const TextStyle(
+                        color: AppTheme.textTertiary,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const Spacer(),
-              AnimatedOpacity(
-                opacity: _hovered ? 1 : 0,
-                duration: 150.ms,
-                child: _ActionRow(
-                  isPinned: item.isPinned,
-                  hasTag: item.tags.isNotEmpty,
-                  iconColor: AppTheme.textTertiary,
-                  onPin: widget.onPin,
-                  onTag: _showTagDialog,
-                  onDelete: widget.onDelete,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: AnimatedOpacity(
+                    opacity: _hovered ? 1 : 0,
+                    duration: 150.ms,
+                    child: _ActionRow(
+                      isPinned: item.isPinned,
+                      hasTag: item.tags.isNotEmpty,
+                      iconColor: AppTheme.textTertiary,
+                      onPin: widget.onPin,
+                      onTag: _showTagDialog,
+                      onPreview: _showPreviewDialog,
+                      onEdit: _showEditDialog,
+                      onDelete: widget.onDelete,
+                      onExpandedChanged: _onMenuChanged,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
     );
   }
+
+  // ── Code card ────────────────────────────────────────────────────────────────
+
+  Widget _buildCodeCard(ClipItem item) {
+    final lang = CodeLanguage.values.firstWhere(
+      (e) => e.name == item.codeLanguage,
+      orElse: () => CodeLanguage.unknown,
+    );
+    final fw = CodeFramework.values.firstWhere(
+      (e) => e.name == item.codeFramework,
+      orElse: () => CodeFramework.none,
+    );
+    final info = CodeInfo(language: lang, framework: fw);
+    final code = item.textContent ?? '';
+    final lineCount = '\n'.allMatches(code).length + 1;
+    final spans = CodeHighlighter.highlight(code, lang);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(35),
+      child: Container(
+        color: const Color(0xFF0E0E1A),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ──────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+              child: Row(
+                children: [
+                  // macOS-style terminal dots
+                  _dot(const Color(0xFFFF5F57)),
+                  const SizedBox(width: 5),
+                  _dot(const Color(0xFFFFBD2E)),
+                  const SizedBox(width: 5),
+                  _dot(const Color(0xFF28CA41)),
+                  const Spacer(),
+                  // Language badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: info.accentColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: info.accentColor.withValues(alpha: 0.35),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      info.displayLabel,
+                      style: TextStyle(
+                        color: info.accentColor,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Code preview ─────────────────────────────────────────────────
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+                child: RichText(
+                  text: TextSpan(children: spans),
+                  maxLines: 8,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                ),
+              ),
+            ),
+            // ── Footer ───────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 2, 11, 10),
+              child: SizedBox(
+                height: 26,
+                child: Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: AnimatedOpacity(
+                        opacity: _menuOpen ? 0.0 : 1.0,
+                        duration: 120.ms,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$lineCount lines · ${code.length} chars · ${_formatTime(item.timestamp)}',
+                              style: const TextStyle(
+                                color: Color(0x4DFFFFFF),
+                                fontSize: 9.5,
+                                fontFamily: 'Consolas',
+                              ),
+                            ),
+                            if (item.tags.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              ...item.tags
+                                  .take(2)
+                                  .map(
+                                    (t) => Padding(
+                                      padding: const EdgeInsets.only(right: 4),
+                                      child: _MiniTagChip(tag: t),
+                                    ),
+                                  ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: AnimatedOpacity(
+                        opacity: _hovered ? 1 : 0,
+                        duration: 150.ms,
+                        child: _ActionRow(
+                          isPinned: item.isPinned,
+                          hasTag: item.tags.isNotEmpty,
+                          iconColor: AppTheme.textTertiary,
+                          onPin: widget.onPin,
+                          onTag: _showTagDialog,
+                          onPreview: _showPreviewDialog,
+                          onEdit: _showEditDialog,
+                          onDelete: widget.onDelete,
+                          onExpandedChanged: _onMenuChanged,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dot(Color color) => Container(
+    width: 7,
+    height: 7,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
 
   Widget _placeholder() => Container(
     color: AppTheme.surfaceMed,
@@ -296,13 +508,16 @@ class _ClipCardState extends State<ClipCard> {
 
 // ── Shared action row ────────────────────────────────────────────────────────
 
-class _ActionRow extends StatelessWidget {
+class _ActionRow extends StatefulWidget {
   final bool isPinned;
   final bool hasTag;
   final Color iconColor;
   final VoidCallback onPin;
   final VoidCallback onTag;
   final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onPreview;
+  final ValueChanged<bool>? onExpandedChanged;
 
   const _ActionRow({
     required this.isPinned,
@@ -311,30 +526,98 @@ class _ActionRow extends StatelessWidget {
     required this.onPin,
     required this.onTag,
     required this.onDelete,
+    this.onEdit,
+    this.onPreview,
+    this.onExpandedChanged,
   });
 
   @override
+  State<_ActionRow> createState() => _ActionRowState();
+}
+
+class _ActionRowState extends State<_ActionRow> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
+    final List<Widget> actions = [
+      _SmallAction(
+        icon: widget.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+        color: widget.isPinned ? AppTheme.accent : widget.iconColor,
+        onTap: widget.onPin,
+      ),
+      _SmallAction(
+        icon: Icons.label_outline_rounded,
+        color: widget.hasTag ? AppTheme.accentPurple : widget.iconColor,
+        onTap: widget.onTag,
+      ),
+      if (widget.onPreview != null)
         _SmallAction(
-          icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-          color: isPinned ? AppTheme.accent : iconColor,
-          onTap: onPin,
+          icon: Icons.visibility_outlined,
+          color: widget.iconColor,
+          hoverColor: AppTheme.accentBlue,
+          onTap: widget.onPreview!,
         ),
+      if (widget.onEdit != null)
         _SmallAction(
-          icon: Icons.label_outline_rounded,
-          color: hasTag ? AppTheme.accentPurple : iconColor,
-          onTap: onTag,
+          icon: Icons.edit_outlined,
+          color: widget.iconColor,
+          hoverColor: AppTheme.accent,
+          onTap: widget.onEdit!,
         ),
-        _SmallAction(
-          icon: Icons.delete_outline_rounded,
-          color: iconColor,
-          hoverColor: AppTheme.accentRed,
-          onTap: onDelete,
-        ),
-      ],
+      _SmallAction(
+        icon: Icons.delete_outline_rounded,
+        color: widget.iconColor,
+        hoverColor: AppTheme.accentRed,
+        onTap: widget.onDelete,
+      ),
+    ];
+
+    return MouseRegion(
+      onExit: (_) {
+        setState(() => _expanded = false);
+        widget.onExpandedChanged?.call(false);
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: _expanded
+                  ? actions.asMap().entries.map((e) {
+                      final delay = (e.key * 35).ms;
+                      return e.value
+                          .animate()
+                          .fadeIn(duration: 140.ms, delay: delay)
+                          .scaleXY(
+                            begin: 0.5,
+                            duration: 200.ms,
+                            delay: delay,
+                            curve: Curves.easeOutBack,
+                          );
+                    }).toList()
+                  : [],
+            ),
+          ),
+          MouseRegion(
+            onEnter: (_) {
+              setState(() => _expanded = true);
+              widget.onExpandedChanged?.call(true);
+            },
+            child: _SmallAction(
+              icon: Icons.more_horiz_rounded,
+              color: widget.iconColor,
+              onTap: () {
+                setState(() => _expanded = !_expanded);
+                widget.onExpandedChanged?.call(_expanded);
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -399,6 +682,7 @@ class _TypeBadge extends StatelessWidget {
       ClipType.text => ('TEXT', AppTheme.accentGreen),
       ClipType.image => ('IMAGE', AppTheme.accentOrange),
       ClipType.url => ('URL', AppTheme.accentBlue),
+      ClipType.code => ('CODE', const Color(0xFF00B4D8)),
     };
 
     return Text(
@@ -703,6 +987,437 @@ class _RemovableTagChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Edit dialog ──────────────────────────────────────────────────────────────
+
+class _EditDialog extends StatefulWidget {
+  final ClipItem item;
+  final void Function(String) onSave;
+
+  const _EditDialog({required this.item, required this.onSave});
+
+  @override
+  State<_EditDialog> createState() => _EditDialogState();
+}
+
+class _EditDialogState extends State<_EditDialog> {
+  late final TextEditingController _controller;
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.item.textContent ?? '');
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final text = _controller.text;
+    if (text.trim().isEmpty) return;
+    widget.onSave(text);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCode = widget.item.isCode;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        width: 420,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF131320),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 40,
+              spreadRadius: -8,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                const Icon(
+                  Icons.edit_outlined,
+                  color: AppTheme.accent,
+                  size: 17,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Edit',
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceMed,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: AppTheme.textTertiary,
+                      size: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            // Text field
+            TextField(
+              controller: _controller,
+              focusNode: _focus,
+              maxLines: 10,
+              minLines: 4,
+              style: TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 12.5,
+                height: 1.55,
+                fontFamily: isCode ? 'Consolas' : null,
+              ),
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.all(12),
+                filled: true,
+                fillColor: AppTheme.surfaceMed,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(
+                    color: AppTheme.border,
+                    width: 0.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(
+                    color: AppTheme.border,
+                    width: 0.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(
+                    color: AppTheme.accent,
+                    width: 1,
+                  ),
+                ),
+              ),
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: 14),
+            // Actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceMed,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border, width: 0.5),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _save,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Save',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Preview overlay (full-screen Overlay entry, not a Dialog) ────────────────
+// Uses Overlay so the panel gets real screen constraints. Column(max) +
+// Expanded + ListView is the canonical Flutter scrollable pattern and always works.
+
+class _PreviewOverlay extends StatefulWidget {
+  final ClipItem item;
+  final VoidCallback onClose;
+
+  const _PreviewOverlay({required this.item, required this.onClose});
+
+  @override
+  State<_PreviewOverlay> createState() => _PreviewOverlayState();
+}
+
+class _PreviewOverlayState extends State<_PreviewOverlay> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    final text = widget.item.textContent ?? widget.item.ocrText ?? '';
+    await Clipboard.setData(ClipboardData(text: text));
+    setState(() => _copied = true);
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final isImage = item.isImage;
+    final isCode = item.isCode;
+
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        children: [
+          // Backdrop — tap to dismiss
+          GestureDetector(
+            onTap: widget.onClose,
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox.expand(
+              child: ColoredBox(color: Colors.black54),
+            ),
+          ),
+          // Panel — Center + vertical margin gives Column a definite height
+          Center(
+            child: Container(
+              width: 520,
+              margin: const EdgeInsets.symmetric(vertical: 48),
+              decoration: BoxDecoration(
+                color: isCode
+                    ? const Color(0xFF0E0E1A)
+                    : const Color(0xFF131320),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    blurRadius: 48,
+                    spreadRadius: -8,
+                  ),
+                ],
+              ),
+              // Column fills the Container height. Expanded grabs whatever
+              // space is left after the fixed header, then ListView scrolls.
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Fixed header ────────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.visibility_outlined,
+                          color: AppTheme.accentBlue,
+                          size: 17,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Preview',
+                          style: TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (!isImage)
+                          GestureDetector(
+                            onTap: _copy,
+                            child: AnimatedContainer(
+                              duration: 200.ms,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _copied
+                                    ? AppTheme.accentGreen.withValues(alpha: 0.15)
+                                    : AppTheme.surfaceMed,
+                                borderRadius: BorderRadius.circular(7),
+                                border: Border.all(
+                                  color: _copied
+                                      ? AppTheme.accentGreen.withValues(alpha: 0.4)
+                                      : AppTheme.border,
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _copied
+                                        ? Icons.check_rounded
+                                        : Icons.copy_rounded,
+                                    size: 12,
+                                    color: _copied
+                                        ? AppTheme.accentGreen
+                                        : AppTheme.textTertiary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _copied ? 'Copied' : 'Copy',
+                                    style: TextStyle(
+                                      color: _copied
+                                          ? AppTheme.accentGreen
+                                          : AppTheme.textTertiary,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (!isImage) const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: widget.onClose,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceMed,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              color: AppTheme.textTertiary,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: Divider(color: AppTheme.border, height: 1),
+                  ),
+                  // ── Scrollable content ──────────────────────────────────────
+                  Expanded(
+                    child: Scrollbar(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                        children: [
+                          if (isImage)
+                            _buildImagePreview(item)
+                          else if (isCode)
+                            _buildCodePreview(item)
+                          else
+                            _buildTextPreview(item),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextPreview(ClipItem item) {
+    final isUrl = item.isUrl;
+    return Text(
+      item.textContent ?? '',
+      style: TextStyle(
+        color: isUrl ? AppTheme.accentBlue : AppTheme.textPrimary,
+        fontSize: 13,
+        height: 1.6,
+        fontFamily: isUrl ? 'Consolas' : null,
+      ),
+    );
+  }
+
+  Widget _buildCodePreview(ClipItem item) {
+    final lang = CodeLanguage.values.firstWhere(
+      (e) => e.name == item.codeLanguage,
+      orElse: () => CodeLanguage.unknown,
+    );
+    final spans = CodeHighlighter.highlight(item.textContent ?? '', lang, maxLines: 0);
+    return RichText(
+      text: TextSpan(children: spans),
+      softWrap: true,
+    );
+  }
+
+  Widget _buildImagePreview(ClipItem item) {
+    if (item.imagePath == null) {
+      return const Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          size: 64,
+          color: AppTheme.textTertiary,
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        File(item.imagePath!),
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => const Center(
+          child: Icon(
+            Icons.broken_image_outlined,
+            size: 64,
+            color: AppTheme.textTertiary,
+          ),
+        ),
       ),
     );
   }

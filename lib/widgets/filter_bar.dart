@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
 import '../providers/clip_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -11,6 +9,7 @@ class FilterBar extends StatelessWidget {
   final int textCount;
   final int imageCount;
   final int urlCount;
+  final int codeCount;
 
   const FilterBar({
     super.key,
@@ -20,43 +19,55 @@ class FilterBar extends StatelessWidget {
     required this.textCount,
     required this.imageCount,
     required this.urlCount,
+    required this.codeCount,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _FilterChip(
-          label: 'ALL',
-          count: total,
-          selected: selected == FilterType.all,
-          onTap: () => onChanged(FilterType.all),
-        ),
-        const SizedBox(width: 8),
-        _FilterChip(
-          label: 'TEXT',
-          count: textCount,
-          selected: selected == FilterType.text,
-          onTap: () => onChanged(FilterType.text),
-          color: AppTheme.accentGreen,
-        ),
-        const SizedBox(width: 8),
-        _FilterChip(
-          label: 'IMAGES',
-          count: imageCount,
-          selected: selected == FilterType.images,
-          onTap: () => onChanged(FilterType.images),
-          color: AppTheme.accentOrange,
-        ),
-        const SizedBox(width: 8),
-        _FilterChip(
-          label: 'URLS',
-          count: urlCount,
-          selected: selected == FilterType.urls,
-          onTap: () => onChanged(FilterType.urls),
-          color: AppTheme.accentBlue,
-        ),
-      ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _FilterChip(
+            label: 'ALL',
+            count: total,
+            selected: selected == FilterType.all,
+            onTap: () => onChanged(FilterType.all),
+          ),
+          const SizedBox(width: 8),
+          _FilterChip(
+            label: 'TEXT',
+            count: textCount,
+            selected: selected == FilterType.text,
+            onTap: () => onChanged(FilterType.text),
+            color: AppTheme.accentGreen,
+          ),
+          const SizedBox(width: 8),
+          _FilterChip(
+            label: 'CODE',
+            count: codeCount,
+            selected: selected == FilterType.code,
+            onTap: () => onChanged(FilterType.code),
+            color: const Color(0xFF00B4D8),
+          ),
+          const SizedBox(width: 8),
+          _FilterChip(
+            label: 'IMAGES',
+            count: imageCount,
+            selected: selected == FilterType.images,
+            onTap: () => onChanged(FilterType.images),
+            color: AppTheme.accentOrange,
+          ),
+          const SizedBox(width: 8),
+          _FilterChip(
+            label: 'URLS',
+            count: urlCount,
+            selected: selected == FilterType.urls,
+            onTap: () => onChanged(FilterType.urls),
+            color: AppTheme.accentBlue,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -85,7 +96,6 @@ class _FilterChipState extends State<_FilterChip> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ClipProvider>();
     final activeColor = widget.color ?? AppTheme.accent;
 
     return MouseRegion(

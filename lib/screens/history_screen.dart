@@ -336,15 +336,17 @@ class _HistoryRowState extends State<_HistoryRow> {
   }
 
   Color _typeColor(ClipType type) => switch (type) {
-    ClipType.text => AppTheme.accentGreen,
+    ClipType.text  => AppTheme.accentGreen,
     ClipType.image => AppTheme.accentOrange,
-    ClipType.url => AppTheme.accentBlue,
+    ClipType.url   => AppTheme.accentBlue,
+    ClipType.code  => const Color(0xFF00B4D8),
   };
 
   IconData _typeIcon(ClipType type) => switch (type) {
-    ClipType.text => Icons.subject_rounded,
+    ClipType.text  => Icons.subject_rounded,
     ClipType.image => Icons.image_rounded,
-    ClipType.url => Icons.link_rounded,
+    ClipType.url   => Icons.link_rounded,
+    ClipType.code  => Icons.code_rounded,
   };
 }
 
